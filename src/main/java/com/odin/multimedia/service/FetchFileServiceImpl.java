@@ -1,0 +1,109 @@
+package com.odin.multimedia.service;
+
+import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.util.Base64;
+import java.util.List;
+
+import javax.servlet.http.HttpServletRequest;
+
+import org.apache.commons.lang.exception.ExceptionUtils;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.util.ObjectUtils;
+
+import com.odin.multimedia.constants.ApplicationConstants;
+import com.odin.multimedia.constants.LanguageConstants;
+import com.odin.multimedia.constants.ResponseCodes;
+import com.odin.multimedia.dto.FetchImageDTO;
+import com.odin.multimedia.dto.FileDTO;
+import com.odin.multimedia.dto.FileDataRSDTO;
+import com.odin.multimedia.dto.ResponseDTO;
+import com.odin.multimedia.enums.CustomerType;
+import com.odin.multimedia.enums.ImageType;
+import com.odin.multimedia.repository.FileRepository;
+import com.odin.multimedia.utility.ResponseObject;
+
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
+@Service
+public class FetchFileServiceImpl implements FetchFileService{
+	
+	@Autowired
+	private ResponseObject responseObj;
+	
+	@Autowired
+	private FileRepository fileRepo;
+
+	@Override
+	public ResponseDTO fetchFile(HttpServletRequest request, FetchImageDTO fetchImageDTO) {
+		String userType = request.getHeader(ApplicationConstants.USER_TYPE);
+		if(userType.equals(CustomerType.CUSTOMER.name())) {
+			return fetchCustomerFile(request, fetchImageDTO);
+		}
+		else {
+			return responseObj.buildResponse(LanguageConstants.EN, ResponseCodes.FAILURE_CODE);
+		}
+	}
+
+	private ResponseDTO fetchCustomerFile(HttpServletRequest request, FetchImageDTO fetchImageDTO) {
+		if(!ObjectUtils.isEmpty(fetchImageDTO.getImageType()) && fetchImageDTO.getImageType() == ImageType.PROFILE_IMG) {
+			return fetchCustomerProfilePhoto(request, fetchImageDTO);
+		}else {
+			return fetchFileById(request, fetchImageDTO);
+		}
+	}
+
+	private ResponseDTO fetchFileById(HttpServletRequest request, FetchImageDTO fetchImageDTO) {
+		try {
+			FileDTO fileDTO = fileRepo.findByfileTypeAndImageIdAndIsActive(fetchImageDTO.getImageType(),
+					fetchImageDTO.getImageId(), true);
+			File file = new File(fileDTO.getFilePath());
+			if (!file.exists()) {
+				return responseObj.buildResponse(LanguageConstants.EN, ResponseCodes.NO_DATA_FOUND);
+			}
+			File fileData = new File(fileDTO.getFilePath());
+			String fileContent = new String(Files.readAllBytes(fileData.toPath()), StandardCharsets.UTF_8);
+			FileDataRSDTO response = FileDataRSDTO.builder().fileExtension(fileDTO.getFileExtension())
+					.fileName(fileDTO.getFileName()).fileData(fileContent).mimeType(fileDTO.getFileMimeType()).build();
+
+			return responseObj.buildResponse(LanguageConstants.EN, ResponseCodes.SUCCESS_CODE, response);
+		} catch (Exception e) {
+			log.error("Error occured while fetching profile photo : {}", ExceptionUtils.getStackTrace(e));
+			return responseObj.buildResponse(LanguageConstants.EN, ResponseCodes.EXCEPTION_CODE);
+		}
+	}
+
+	private ResponseDTO fetchCustomerProfilePhoto(HttpServletRequest request, FetchImageDTO fetchImageDTO) {
+		try {
+		String customerId = request.getHeader(ApplicationConstants.CUSTOMER_ID);
+		List<FileDTO> fileListDTO = fileRepo.findByfileTypeAndCustomerIdAndIsActive(fetchImageDTO.getImageType().name(), customerId, true);
+		FileDTO fileDTO = null;
+		if(!fileListDTO.isEmpty()) {
+			fileDTO = fileListDTO.get(0);
+		}
+		if (fileDTO == null || fileDTO.getFilePath() == null) {
+			return responseObj.buildResponse(LanguageConstants.EN, ResponseCodes.NO_DATA_FOUND);
+        }
+
+        // Read the file from the system
+        File file = new File(fileDTO.getFilePath());
+        if (!file.exists()) {
+        	return responseObj.buildResponse(LanguageConstants.EN, ResponseCodes.NO_DATA_FOUND);
+        }
+        File fileData = new File(fileDTO.getFilePath());
+        String fileContent = new String(Files.readAllBytes(fileData.toPath()), StandardCharsets.UTF_8);
+		FileDataRSDTO response = FileDataRSDTO.builder().fileExtension(fileDTO.getFileExtension())
+				.fileName(fileDTO.getFileName()).fileData(fileContent).mimeType(fileDTO.getFileMimeType()).build();
+
+        return responseObj.buildResponse(LanguageConstants.EN, ResponseCodes.SUCCESS_CODE, response);
+
+		}catch(Exception e) {
+			log.error("Error occured while fetching profile photo : {}", ExceptionUtils.getStackTrace(e));
+			return responseObj.buildResponse(LanguageConstants.EN, ResponseCodes.EXCEPTION_CODE);
+		}
+	}
+
+}

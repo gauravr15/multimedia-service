@@ -2,6 +2,10 @@ package com.odin.multimedia;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.context.annotation.Bean;
+
+import com.odin.multimedia.filters.InvalidCharacterFilter;
 
 @SpringBootApplication
 public class VideoApplication {
@@ -10,4 +14,11 @@ public class VideoApplication {
 		SpringApplication.run(VideoApplication.class, args);
 	}
 
+	@Bean
+	public FilterRegistrationBean<InvalidCharacterFilter> loggingFilter() {
+	    FilterRegistrationBean<InvalidCharacterFilter> registrationBean = new FilterRegistrationBean<>();
+	    registrationBean.setFilter(new InvalidCharacterFilter());
+	    registrationBean.addUrlPatterns("/*"); // Or specify specific patterns if needed
+	    return registrationBean;
+	}
 }

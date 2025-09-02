@@ -1,7 +1,6 @@
 package com.odin.multimedia.controller;
 
 import java.io.IOException;
-import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -9,16 +8,21 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
+import com.odin.multimedia.constants.ApplicationConstants;
+import com.odin.multimedia.dto.ImageDTO;
 import com.odin.multimedia.dto.ResponseDTO;
 import com.odin.multimedia.enums.ImageType;
 import com.odin.multimedia.service.ImageService;
 
 @CrossOrigin(origins = "*")
 @RestController
-@RequestMapping("/images")
+@RequestMapping(ApplicationConstants.API_VERSION + ApplicationConstants.IMAGES)
 public class ImageController {
 
     @Autowired
@@ -44,4 +48,19 @@ public class ImageController {
             return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
+    
+	@PostMapping(ApplicationConstants.UPLOAD)
+	public ResponseEntity<Object> uploadImage(@RequestParam("file") MultipartFile file) {
+		ImageDTO savedImage = imageService.uploadImage(file);
+		return new ResponseEntity<>(savedImage, HttpStatus.OK);
+
+	}
+
+//    @GetMapping("/image/{id}")
+//    public ResponseEntity<Object> getImageDetails(@PathVariable Long id) {
+//        return imageService.getImage(id)
+//                .map(image -> ResponseEntity.ok().body(image))
+//                .orElse(ResponseEntity.notFound().build());
+//    }
+    
 }
