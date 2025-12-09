@@ -17,24 +17,24 @@ import com.odin.multimedia.repository.AccessRightsRepository;
 @Configuration
 public class CachingConfig {
 	
-	@Autowired
-	private AccessRightsRepository accessRightsRepo;
-
-	private static final Map<String, Map<String, Integer>> CACHED_RIGHTS = new HashMap<>();
-	
-	@PostConstruct
-	public void cacheAccessRights() {
-		List<AccessRights> accessRightsList = accessRightsRepo.findAllAccessRights();
-
-		Map<String, Map<String, Integer>> cachedRights = accessRightsList.stream()
-				.collect(Collectors.groupingBy(AccessRights::getUserType,
-						Collectors.toMap(AccessRights::getModuleName, AccessRights::getIsAllowed)));
-
-		CACHED_RIGHTS.putAll(cachedRights);
-	}
-	
-	public static Map<String, Map<String, Integer>> getCachedRights() {
-        return CACHED_RIGHTS;
-    }
+//	@Autowired
+//	private AccessRightsRepository accessRightsRepo;
+//
+//	private static final Map<String, Map<String, Integer>> CACHED_RIGHTS = new HashMap<>();
+//	
+//	@PostConstruct
+//	public void cacheAccessRights() {
+//		List<AccessRights> accessRightsList = accessRightsRepo.findAllAccessRights();
+//
+//		Map<String, Map<String, Integer>> cachedRights = accessRightsList.stream()
+//				.collect(Collectors.groupingBy(AccessRights::getUserType,
+//						Collectors.toMap(AccessRights::getModuleName, AccessRights::getIsAllowed)));
+//
+//		CACHED_RIGHTS.putAll(cachedRights);
+//	}
+//	
+//	public static Map<String, Map<String, Integer>> getCachedRights() {
+//        return CACHED_RIGHTS;
+//    }
 
 }

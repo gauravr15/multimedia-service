@@ -13,6 +13,7 @@ import java.util.UUID;
 import javax.servlet.http.HttpServletResponse;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.ObjectUtils;
 import org.springframework.web.multipart.MultipartFile;
@@ -34,9 +35,14 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 public class CustomerFileUploadService implements FileUploadService {
 
-	private static final List<String> ALLOWED_EXTENSIONS = Arrays.asList("jpg", "jpeg", "png");
-	private static final List<String> ALLOWED_MIME_TYPES = Arrays.asList("image/jpeg", "image/png");
-	private static final String BASE_DIR = "C:\\Users\\gaura\\Pictures\\applicationFiles\\";
+	@Value("${allowed.file.extensions}")
+	private List<String> ALLOWED_EXTENSIONS;
+	
+	@Value("${allowed.file.mime.type}")
+	private List<String> ALLOWED_MIME_TYPES;
+	
+	@Value("${file.upload.base.dir}")
+	private String BASE_DIR;
 
 	@Autowired
 	ResponseObject responseObj;
