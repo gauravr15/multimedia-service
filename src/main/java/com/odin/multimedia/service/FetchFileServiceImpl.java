@@ -20,6 +20,8 @@ import com.odin.multimedia.dto.FetchImageDTO;
 import com.odin.multimedia.dto.FileDTO;
 import com.odin.multimedia.dto.FileDataRSDTO;
 import com.odin.multimedia.dto.ResponseDTO;
+import com.odin.multimedia.dto.StatusImageDTO;
+import com.odin.multimedia.dto.StatusMediaDTO;
 import com.odin.multimedia.enums.CustomerType;
 import com.odin.multimedia.enums.ImageType;
 import com.odin.multimedia.repository.FileRepository;
@@ -37,6 +39,9 @@ public class FetchFileServiceImpl implements FetchFileService{
 	@Autowired
 	private FileRepository fileRepo;
 
+	@Autowired
+	private StatusImageService statusImageService;
+
 	@Override
 	public ResponseDTO fetchFile(HttpServletRequest request, FetchImageDTO fetchImageDTO) {
 		String userType = request.getHeader(ApplicationConstants.USER_TYPE);
@@ -51,8 +56,68 @@ public class FetchFileServiceImpl implements FetchFileService{
 	private ResponseDTO fetchCustomerFile(HttpServletRequest request, FetchImageDTO fetchImageDTO) {
 		if(!ObjectUtils.isEmpty(fetchImageDTO.getImageType()) && fetchImageDTO.getImageType() == ImageType.PROFILE_IMG) {
 			return fetchCustomerProfilePhoto(request, fetchImageDTO);
-		}else {
+		} else if (!ObjectUtils.isEmpty(fetchImageDTO.getImageType()) && fetchImageDTO.getImageType() == ImageType.STATUS_IMG) {
+			if (!ObjectUtils.isEmpty(fetchImageDTO.getStatusKey())) {
+				return fetchSpecificStatusImage(fetchImageDTO);
+			}
+			return fetchCustomerStatusMedia(request);
+		} else {
 			return fetchFileById(request, fetchImageDTO);
+		}
+	}
+
+	private ResponseDTO fetchSpecificStatusImage(FetchImageDTO fetchImageDTO) {
+		try {
+			String statusKey = fetchImageDTO.getStatusKey();
+			String filePath = statusImageService.getFilePathByKey(statusKey);
+
+			if (filePath == null) {
+				log.warn("Status image not found or expired for key: {}", statusKey);
+				return responseObj.buildResponse(LanguageConstants.EN, ResponseCodes.NO_DATA_FOUND);
+			}
+
+			File file = new File(filePath);
+			if (!file.exists()) {
+				log.warn("Status file missing from disk: {}", filePath);
+				return responseObj.buildResponse(LanguageConstants.EN, ResponseCodes.NO_DATA_FOUND);
+			}
+
+			String fileContent = new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+
+			// Parse timestamp from key (customerId:STATUS_IMG:timestamp)
+			long timestamp = 0;
+			try {
+				int lastIndex = statusKey.lastIndexOf(":");
+				timestamp = Long.parseLong(statusKey.substring(lastIndex + 1));
+			} catch (Exception e) {
+				log.warn("Could not parse timestamp from statusKey: {}", statusKey);
+			}
+
+			StatusImageDTO response = StatusImageDTO.builder()
+					.timestamp(timestamp)
+					.uploaderCustomerId(fetchImageDTO.getUploaderCustomerId())
+					.fileData(fileContent)
+					.build();
+
+			return responseObj.buildResponse(LanguageConstants.EN, ResponseCodes.SUCCESS_CODE, response);
+		} catch (Exception e) {
+			log.error("Error occurred while fetching specific status image", e);
+			return responseObj.buildResponse(LanguageConstants.EN, ResponseCodes.EXCEPTION_CODE);
+		}
+	}
+
+	private ResponseDTO fetchCustomerStatusMedia(HttpServletRequest request) {
+		try {
+			String customerId = request.getHeader(ApplicationConstants.CUSTOMER_ID);
+			if (customerId == null || customerId.isEmpty()) {
+				return responseObj.buildResponse(LanguageConstants.EN, ResponseCodes.FAILURE_CODE);
+			}
+
+			java.util.List<StatusMediaDTO> media = statusImageService.fetchStatusMedia(customerId);
+			return responseObj.buildResponse(LanguageConstants.EN, ResponseCodes.SUCCESS_CODE, media);
+		} catch (Exception e) {
+			log.error("Error occurred while fetching status media", e);
+			return responseObj.buildResponse(LanguageConstants.EN, ResponseCodes.EXCEPTION_CODE);
 		}
 	}
 

@@ -20,4 +20,8 @@ public class FetchImageDTO {
 	private List<Long> imageIds;
 	
 	private Long imageId;
+
+	private String uploaderCustomerId;
+
+	private String statusKey;
 }
