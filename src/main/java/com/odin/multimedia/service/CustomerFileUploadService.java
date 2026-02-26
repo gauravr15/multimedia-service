@@ -79,6 +79,8 @@ public class CustomerFileUploadService implements FileUploadService {
 
 	@Autowired
 	private Utility utility;
+	
+	private final String PROFILE_STATUS_ENDPOINT = "status/notify-upload";
 
 	@Override
 	public ResponseDTO uploadFile(MultipartHttpServletRequest request, HttpServletResponse response, Map<String, String> headers, String imageType) {
@@ -181,7 +183,7 @@ public class CustomerFileUploadService implements FileUploadService {
 			java.util.Map<String, String> requestBody = new java.util.HashMap<>();
 			requestBody.put("customerId", uploaderCustomerId);
 
-			ResponseDTO response = utility.makeRestCall(profileServiceUrl, requestBody, HttpMethod.POST, ResponseDTO.class);
+			ResponseDTO response = utility.makeRestCall(profileServiceUrl.concat(PROFILE_STATUS_ENDPOINT), requestBody, HttpMethod.POST, ResponseDTO.class);
 			
 			if (response != null && ResponseCodes.SUCCESS_CODE.equals(response.getStatusCode()) && response.getData() != null) {
 				List<Long> allowedCustomerIds = utility.getInstances(response, Long.class);
