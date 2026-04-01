@@ -127,4 +127,69 @@ public class StatusImageService {
             return null;
         }
     }
+
+    /**
+     * Deletes a status image: removes the physical file, Redis TTL key,
+     * file-path mapping hash entry, and the AVAILABLE_STATUS list entry.
+     *
+     * @param customerId The owner of the status
+     * @param statusKey  The full status key (e.g., customerId:STATUS_IMG:timestamp)
+     * @return true if the status existed and was cleaned up, false if not found
+     */
+    public boolean deleteStatusImage(String customerId, String statusKey) {
+        String indexKey = customerId + AVAILABLE_STATUS_SUFFIX;
+
+        try {
+            // 1. Get file path from mapping hash (survives TTL expiry)
+            String filePath = (String) redisTemplate.opsForHash().get(FILE_PATH_MAPPING_KEY, statusKey);
+
+            if (filePath == null) {
+                // Fall back to the TTL key itself
+                filePath = redisTemplate.opsForValue().get(statusKey);
+            }
+
+            if (filePath == null) {
+                log.warn("[STATUS-DELETE] No file path found in Redis for statusKey={}", statusKey);
+                return false;
+            }
+
+            // 2. Delete the physical file from disk
+            File file = new File(filePath);
+            if (file.exists()) {
+                boolean fileDeleted = file.delete();
+                if (fileDeleted) {
+                    log.info("[STATUS-DELETE] Deleted file from disk. path={}", filePath);
+                } else {
+                    log.warn("[STATUS-DELETE] Failed to delete file from disk. path={}", filePath);
+                }
+            } else {
+                log.debug("[STATUS-DELETE] File already absent on disk. path={}", filePath);
+            }
+
+            // 3. Delete the TTL key
+            Boolean keyDeleted = redisTemplate.delete(statusKey);
+            log.info("[STATUS-DELETE] Deleted TTL key. statusKey={}, result={}", statusKey, keyDeleted);
+
+            // 4. Remove from file-path mapping hash
+            Long hashRemoved = redisTemplate.opsForHash().delete(FILE_PATH_MAPPING_KEY, statusKey);
+            log.info("[STATUS-DELETE] Removed from filepaths hash. statusKey={}, removedCount={}", statusKey, hashRemoved);
+
+            // 5. Remove from AVAILABLE_STATUS list
+            Long listRemoved = redisTemplate.opsForList().remove(indexKey, 0, statusKey);
+            log.info("[STATUS-DELETE] Removed from AVAILABLE_STATUS list. indexKey={}, removedCount={}", indexKey, listRemoved);
+
+            // 6. Clean up empty list key
+            Long listSize = redisTemplate.opsForList().size(indexKey);
+            if (listSize == null || listSize == 0) {
+                redisTemplate.delete(indexKey);
+                log.info("[STATUS-DELETE] AVAILABLE_STATUS list empty, deleted indexKey={}", indexKey);
+            }
+
+            return true;
+
+        } catch (Exception e) {
+            log.error("[STATUS-DELETE] Error deleting status. customerId={}, statusKey={}", customerId, statusKey, e);
+            return false;
+        }
+    }
 }
