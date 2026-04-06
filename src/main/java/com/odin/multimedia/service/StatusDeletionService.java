@@ -76,8 +76,9 @@ public class StatusDeletionService {
     /**
      * Fetches the viewer list from profile-service and publishes STATUS_DELETE
      * notifications via Kafka so that each viewer's device removes the status locally.
+     * Package-private so that {@link StatusImageExpiryListener} can call it on Redis TTL expiry.
      */
-    private void publishStatusDeleteNotifications(String uploaderCustomerId, String statusKey) {
+    void publishStatusDeleteNotifications(String uploaderCustomerId, String statusKey) {
         log.info("[STATUS-DELETE] Fetching viewer list for delete notification. uploaderCustomerId={}", uploaderCustomerId);
 
         try {

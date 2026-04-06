@@ -21,6 +21,7 @@ public class StatusImageExpiryListener implements MessageListener {
     private static final String FILE_PATH_MAPPING_KEY = "status:filepaths";
 
     private final StringRedisTemplate redisTemplate;
+    private final StatusDeletionService statusDeletionService;
 
     @Override
     public void onMessage(Message message, byte[] pattern) {
@@ -71,6 +72,10 @@ public class StatusImageExpiryListener implements MessageListener {
                 redisTemplate.delete(indexKey);
                 log.info("Index key {} was empty and has been deleted", indexKey);
             }
+
+            // 6. Notify all viewers via Kafka so their devices remove the expired status
+            log.info("[STATUS-EXPIRY] Publishing STATUS_DELETE notifications for expired statusKey={}", statusKey);
+            statusDeletionService.publishStatusDeleteNotifications(customerId, statusKey);
 
         } catch (Exception e) {
             log.error("Error during status expiry cleanup for key: {}", statusKey, e);
