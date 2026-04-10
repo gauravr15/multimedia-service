@@ -13,6 +13,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
+import org.springframework.util.ObjectUtils;
 import org.springframework.web.client.RestTemplate;
 
 import com.fasterxml.jackson.databind.JavaType;
@@ -66,10 +67,16 @@ public class Utility {
 
 
 	public <T> List<T> getInstances(ResponseDTO response, Class<T> clazz) {
+		if(ObjectUtils.isEmpty(response.getData())) {
+			return Collections.emptyList();
+		}
 	    try {
 	    	ObjectMapper objectMapper = new ObjectMapper();
 	        List<?> rawData = (List<?>) response.getData();
-
+	        if(rawData.size() == 0) {
+	        	log.debug("raw data is empty");
+	        	return Collections.emptyList();
+	        }
 	        // Map each LinkedHashMap to the desired type
 	        return rawData.stream()
 	            .map(item -> objectMapper.convertValue(item, clazz))
