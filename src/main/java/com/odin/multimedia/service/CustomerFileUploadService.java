@@ -220,14 +220,23 @@ public class CustomerFileUploadService implements FileUploadService {
 		}
 	}
 
+	private static final String PROFILE_PHOTO_NOTIFY_ENDPOINT = "profiles/photo/notify-upload";
+	private static final String PROFILE_PHOTO_VERSION_ENDPOINT = "profiles/photo-version/increment";
+
 	private void publishProfileImageEventIfNeeded(String customerId, ImageType imageType, FileDTO fileResponse, String downscaledBase64) {
 		try {
 			if (imageType != ImageType.PROFILE_IMG || fileResponse == null || fileResponse.getId() == null) {
 				return;
 			}
 
+			// 1. Increment photo version in profile-service
+			incrementPhotoVersion(customerId);
+
+			// 2. Get allowed viewer IDs from profile-service and publish notifications
+			publishProfilePhotoNotifications(customerId, fileResponse);
+
 			if (downscaledBase64 == null) {
-				log.warn("Skipping profile image notification publish due to missing downscaled content for customerId={}", customerId);
+				log.warn("Skipping profile image Kafka publish due to missing downscaled content for customerId={}", customerId);
 				return;
 			}
 
@@ -245,6 +254,65 @@ public class CustomerFileUploadService implements FileUploadService {
 		} catch (Exception ex) {
 			log.error("Failed to publish profile image event for customerId={}, imageId={}", customerId,
 					fileResponse != null ? fileResponse.getId() : null, ex);
+		}
+	}
+
+	private void incrementPhotoVersion(String customerId) {
+		try {
+			java.util.Map<String, String> requestBody = new java.util.HashMap<>();
+			requestBody.put("customerId", customerId);
+
+			ResponseDTO response = utility.makeRestCall(
+					profileServiceUrl.concat(PROFILE_PHOTO_VERSION_ENDPOINT),
+					requestBody, org.springframework.http.HttpMethod.POST, ResponseDTO.class);
+
+			if (response != null && ResponseCodes.SUCCESS_CODE.equals(response.getStatusCode())) {
+				log.info("Photo version incremented for customerId={}", customerId);
+			} else {
+				log.warn("Failed to increment photo version for customerId={}. Response: {}", customerId, response);
+			}
+		} catch (Exception ex) {
+			log.error("Error incrementing photo version for customerId={}", customerId, ex);
+		}
+	}
+
+	private void publishProfilePhotoNotifications(String customerId, FileDTO fileResponse) {
+		try {
+			java.util.Map<String, String> requestBody = new java.util.HashMap<>();
+			requestBody.put("customerId", customerId);
+
+			ResponseDTO response = utility.makeRestCall(
+					profileServiceUrl.concat(PROFILE_PHOTO_NOTIFY_ENDPOINT),
+					requestBody, org.springframework.http.HttpMethod.POST, ResponseDTO.class);
+
+			if (response != null && ResponseCodes.SUCCESS_CODE.equals(response.getStatusCode()) && response.getData() != null) {
+				List<Long> allowedCustomerIds = utility.getInstances(response, Long.class);
+				log.info("Found {} allowed customers for profile photo update. customerId={}", 
+						allowedCustomerIds.size(), customerId);
+
+				String senderMobile = profileRepo.findByCustomerId(customerId).getMobile();
+
+				for (Long allowedId : allowedCustomerIds) {
+					java.util.Map<String, Object> notificationMap = new java.util.HashMap<>();
+					notificationMap.put("senderCustomerId", customerId);
+					notificationMap.put("senderMobile", senderMobile);
+					notificationMap.put("profilePhotoUpdate", "true");
+
+					NotificationDTO notification = NotificationDTO.builder()
+							.customerId(allowedId)
+							.notificationId(1L)
+							.channel(NotificationChannel.INAPP)
+							.map(notificationMap)
+							.build();
+
+					profileImageEventPublisher.publish(notification, String.valueOf(allowedId));
+				}
+			} else {
+				log.warn("Profile service returned non-success for photo notify. customerId={}. Response: {}", 
+						customerId, response);
+			}
+		} catch (Exception ex) {
+			log.error("Failed to publish profile photo notifications for customerId={}", customerId, ex);
 		}
 	}
 

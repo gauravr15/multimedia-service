@@ -143,7 +143,12 @@ public class FetchFileServiceImpl implements FetchFileService{
 
 	private ResponseDTO fetchCustomerProfilePhoto(HttpServletRequest request, FetchImageDTO fetchImageDTO) {
 		try {
-		String customerId = request.getHeader(ApplicationConstants.CUSTOMER_ID);
+		// Support peer photo fetch: if targetCustomerId is provided, fetch that user's photo
+		String targetId = fetchImageDTO.getTargetCustomerId();
+		String customerId = (targetId != null && !targetId.trim().isEmpty())
+				? targetId
+				: request.getHeader(ApplicationConstants.CUSTOMER_ID);
+
 		List<FileDTO> fileListDTO = fileRepo.findByfileTypeAndCustomerIdAndIsActive(fetchImageDTO.getImageType().name(), customerId, true);
 		FileDTO fileDTO = null;
 		if(!fileListDTO.isEmpty()) {

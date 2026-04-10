@@ -23,5 +23,7 @@ public class FetchImageDTO {
 
 	private String uploaderCustomerId;
 
+	private String targetCustomerId;
+
 	private String statusKey;
 }

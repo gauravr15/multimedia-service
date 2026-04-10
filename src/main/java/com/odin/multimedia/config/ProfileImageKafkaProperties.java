@@ -13,7 +13,7 @@ public class ProfileImageKafkaProperties {
     /**
      * Toggle to enable or disable publishing profile image upload events to Kafka.
      */
-    private boolean enabled = false;
+    private boolean enabled = true;
 
     /**
      * Target topic name for profile image events.
