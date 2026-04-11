@@ -85,6 +85,7 @@ public class CustomerFileUploadService implements FileUploadService {
 	@Override
 	public ResponseDTO uploadFile(MultipartHttpServletRequest request, HttpServletResponse response, Map<String, String> headers, String imageType) {
 		try {
+			log.info("[UPLOAD-START] BASE_DIR={} for imageType={}", BASE_DIR, imageType);
 			String customerId = headers.get(ApplicationConstants.CUSTOMER_ID.toLowerCase());
 			if (customerId == null || customerId.isEmpty()) {
 				throw new IllegalArgumentException("Missing customerId in request headers");
@@ -135,6 +136,7 @@ public class CustomerFileUploadService implements FileUploadService {
 
 	        String uniqueFileName = UUID.randomUUID() + "." + ApplicationConstants.TXT;
 	        File outputFile = new File(dateFolder, uniqueFileName);
+	        log.info("[UPLOAD-FILE] Output file absolute path: {}", outputFile.getAbsolutePath());
 
 	        try (FileOutputStream fos = new FileOutputStream(outputFile)) {
 	            fos.write(base64EncodedContent.getBytes());
@@ -164,6 +166,7 @@ public class CustomerFileUploadService implements FileUploadService {
 			metadata.setFileExtension(fileExtension);
 			metadata.setIsActive(true);
 			metadata.setIsDeleted(false);
+			log.info("[UPLOAD-METADATA] Saving metadata with filePath: {} for customerId: {}", metadata.getFilePath(), metadata.getCustomerId());
 
 			FileDTO fileResponse = fileRepository.save(metadata);
 			publishProfileImageEventIfNeeded(customerId, resolvedImageType, fileResponse, downscaledBase64);

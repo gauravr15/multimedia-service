@@ -67,22 +67,39 @@ public class Utility {
 
 
 	public <T> List<T> getInstances(ResponseDTO response, Class<T> clazz) {
-		if(ObjectUtils.isEmpty(response.getData())) {
+		if (response == null) {
+			log.warn("[UTIL-INSTANCES] response object is null for class={}", clazz.getSimpleName());
+			return Collections.emptyList();
+		}
+		log.info("[UTIL-INSTANCES] statusCode={} hasData={} dataType={} for class={}",
+				response.getStatusCode(),
+				response.getData() != null,
+				response.getData() != null ? response.getData().getClass().getSimpleName() : "null",
+				clazz.getSimpleName());
+		if (ObjectUtils.isEmpty(response.getData())) {
+			log.warn("[UTIL-INSTANCES] data is null/empty for statusCode={} class={}",
+					response.getStatusCode(), clazz.getSimpleName());
 			return Collections.emptyList();
 		}
 	    try {
 	    	ObjectMapper objectMapper = new ObjectMapper();
 	        List<?> rawData = (List<?>) response.getData();
-	        if(rawData.size() == 0) {
-	        	log.debug("raw data is empty");
+	        log.info("[UTIL-INSTANCES] rawData size={} elementType={} for class={}",
+	        		rawData.size(),
+	        		rawData.isEmpty() ? "empty" : rawData.get(0).getClass().getSimpleName(),
+	        		clazz.getSimpleName());
+	        if (rawData.size() == 0) {
+	        	log.warn("[UTIL-INSTANCES] rawData list is empty for class={}", clazz.getSimpleName());
 	        	return Collections.emptyList();
 	        }
 	        // Map each LinkedHashMap to the desired type
-	        return rawData.stream()
+	        List<T> result = rawData.stream()
 	            .map(item -> objectMapper.convertValue(item, clazz))
 	            .collect(Collectors.toList());
+	        log.info("[UTIL-INSTANCES] Converted {} instances of {}", result.size(), clazz.getSimpleName());
+	        return result;
 	    } catch (Exception e) {
-	        log.error("Error occurred while converting to class entityClass: {}", ExceptionUtils.getStackTrace(e));
+	        log.error("[UTIL-INSTANCES] Error converting to {}: {}", clazz.getSimpleName(), ExceptionUtils.getStackTrace(e));
 	        return Collections.emptyList(); // Return empty list in case of an error
 	    }
 	}

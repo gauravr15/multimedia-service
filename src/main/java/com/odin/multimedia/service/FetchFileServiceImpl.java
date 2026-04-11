@@ -145,35 +145,49 @@ public class FetchFileServiceImpl implements FetchFileService{
 		try {
 		// Support peer photo fetch: if targetCustomerId is provided, fetch that user's photo
 		String targetId = fetchImageDTO.getTargetCustomerId();
-		String customerId = (targetId != null && !targetId.trim().isEmpty())
-				? targetId
-				: request.getHeader(ApplicationConstants.CUSTOMER_ID);
+                String headerCustomerId = request.getHeader(ApplicationConstants.CUSTOMER_ID);
+                String customerId = (targetId != null && !targetId.trim().isEmpty())
+                                ? targetId
+                                : headerCustomerId;
 
-		List<FileDTO> fileListDTO = fileRepo.findByfileTypeAndCustomerIdAndIsActive(fetchImageDTO.getImageType().name(), customerId, true);
-		FileDTO fileDTO = null;
-		if(!fileListDTO.isEmpty()) {
-			fileDTO = fileListDTO.get(0);
-		}
-		if (fileDTO == null || fileDTO.getFilePath() == null) {
-			return responseObj.buildResponse(LanguageConstants.EN, ResponseCodes.NO_DATA_FOUND);
+                log.info("[FETCH-PHOTO] Resolved customerId={} | targetId={} | headerCustomerId={}",
+                                customerId, targetId, headerCustomerId);
+
+                List<FileDTO> fileListDTO = fileRepo.findByfileTypeAndCustomerIdAndIsActive(fetchImageDTO.getImageType().name(), customerId, true);
+                log.info("[FETCH-PHOTO] fileRepo returned {} FileDTOs for customerId={}",
+                                fileListDTO == null ? "null" : fileListDTO.size(), customerId);
+
+                FileDTO fileDTO = null;
+                if (fileListDTO != null && !fileListDTO.isEmpty()) {
+                        fileDTO = fileListDTO.get(0);
+                        log.info("[FETCH-PHOTO] Selected FileDTO: id={} customerId={} fileType={} isActive={}",
+                                        fileDTO.getId(), fileDTO.getCustomerId(), fileDTO.getFileType(), fileDTO.getIsActive());
+                        log.info("[FETCH-PHOTO] File path from DB: {}", fileDTO.getFilePath());
+                }
+                if (fileDTO == null || fileDTO.getFilePath() == null) {
+                        log.warn("[FETCH-PHOTO] NO_DATA_FOUND: fileDTO={} for customerId={}",
+                                        fileDTO == null ? "null" : "filePath-null", customerId);
+                        return responseObj.buildResponse(LanguageConstants.EN, ResponseCodes.NO_DATA_FOUND);
         }
 
         // Read the file from the system
         File file = new File(fileDTO.getFilePath());
+        log.info("[FETCH-PHOTO] Checking file existence: path={} exists={}", file.getAbsolutePath(), file.exists());
         if (!file.exists()) {
-        	return responseObj.buildResponse(LanguageConstants.EN, ResponseCodes.NO_DATA_FOUND);
+                log.warn("[FETCH-PHOTO] FILE NOT ON DISK for customerId={} path={}", customerId, fileDTO.getFilePath());
+                return responseObj.buildResponse(LanguageConstants.EN, ResponseCodes.NO_DATA_FOUND);
         }
         File fileData = new File(fileDTO.getFilePath());
         String fileContent = new String(Files.readAllBytes(fileData.toPath()), StandardCharsets.UTF_8);
-		FileDataRSDTO response = FileDataRSDTO.builder().fileExtension(fileDTO.getFileExtension())
-				.fileName(fileDTO.getFileName()).fileData(fileContent).mimeType(fileDTO.getFileMimeType()).build();
+        log.info("[FETCH-PHOTO] File read OK for customerId={} size={} bytes", customerId, fileContent.length());
+                FileDataRSDTO response = FileDataRSDTO.builder().fileExtension(fileDTO.getFileExtension())
+                                .fileName(fileDTO.getFileName()).fileData(fileContent).mimeType(fileDTO.getFileMimeType()).build();
 
         return responseObj.buildResponse(LanguageConstants.EN, ResponseCodes.SUCCESS_CODE, response);
 
-		}catch(Exception e) {
-			log.error("Error occured while fetching profile photo : {}", ExceptionUtils.getStackTrace(e));
-			return responseObj.buildResponse(LanguageConstants.EN, ResponseCodes.EXCEPTION_CODE);
-		}
-	}
-
+                }catch(Exception e) {
+                        log.error("[FETCH-PHOTO] Exception for customerId: {}", ExceptionUtils.getStackTrace(e));
+                        return responseObj.buildResponse(LanguageConstants.EN, ResponseCodes.EXCEPTION_CODE);
+                }
+        }
 }
