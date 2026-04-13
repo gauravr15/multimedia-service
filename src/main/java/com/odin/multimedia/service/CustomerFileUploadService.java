@@ -117,15 +117,21 @@ public class CustomerFileUploadService implements FileUploadService {
 
 			// ── STATUS_VID: video-specific early-return path ──────────────────────────
 			// Bypasses the image-only ALLOWED_EXTENSIONS / ALLOWED_MIME_TYPES validation.
+			// Supports both H.264 (video/mp4) and H.265/HEVC (video/hevc, video/mp4 with HEVC codec).
 			if (resolvedImageType == ImageType.STATUS_VID) {
 				String videoExtension = getFileExtension(fileName);
 				if (!"mp4".equals(videoExtension.toLowerCase())) {
 					throw new IllegalArgumentException("Only MP4 video files are supported for video status");
 				}
 				String videoMimeType = file.getContentType();
-				if (videoMimeType == null || !"video/mp4".equals(videoMimeType)) {
-					throw new IllegalArgumentException("Unsupported MIME type for video status");
+				// Accept both video/mp4 (H.264 or H.265) and video/hevc (explicit H.265)
+				if (videoMimeType == null || !(
+					"video/mp4".equals(videoMimeType) || 
+					"video/hevc".equals(videoMimeType)
+				)) {
+					throw new IllegalArgumentException("Unsupported MIME type for video status. Supported: video/mp4, video/hevc");
 				}
+				log.info("[UPLOAD-FILE] Video status upload | extension=mp4 | mimeType={}", videoMimeType);
 				byte[] videoBytes = file.getBytes();
 				String videoBase64 = Base64.getEncoder().encodeToString(videoBytes);
 				String videoDate = new SimpleDateFormat("dd-MM-yyyy").format(new Date());
