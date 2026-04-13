@@ -115,6 +115,37 @@ public class CustomerFileUploadService implements FileUploadService {
 				throw new IllegalArgumentException("Invalid file name");
 			}
 
+			// ── STATUS_VID: video-specific early-return path ──────────────────────────
+			// Bypasses the image-only ALLOWED_EXTENSIONS / ALLOWED_MIME_TYPES validation.
+			if (resolvedImageType == ImageType.STATUS_VID) {
+				String videoExtension = getFileExtension(fileName);
+				if (!"mp4".equals(videoExtension.toLowerCase())) {
+					throw new IllegalArgumentException("Only MP4 video files are supported for video status");
+				}
+				String videoMimeType = file.getContentType();
+				if (videoMimeType == null || !"video/mp4".equals(videoMimeType)) {
+					throw new IllegalArgumentException("Unsupported MIME type for video status");
+				}
+				byte[] videoBytes = file.getBytes();
+				String videoBase64 = Base64.getEncoder().encodeToString(videoBytes);
+				String videoDate = new SimpleDateFormat("dd-MM-yyyy").format(new Date());
+				File videoDateFolder = new File(BASE_DIR + File.separator + videoDate);
+				if (!videoDateFolder.exists()) {
+					videoDateFolder.mkdirs();
+				}
+				String videoUniqueFileName = UUID.randomUUID() + "." + ApplicationConstants.TXT;
+				File videoOutputFile = new File(videoDateFolder, videoUniqueFileName);
+				log.info("[UPLOAD-FILE] Video status output file: {}", videoOutputFile.getAbsolutePath());
+				try (FileOutputStream videoFos = new FileOutputStream(videoOutputFile)) {
+					videoFos.write(videoBase64.getBytes());
+				}
+				String videoStatusKey = statusImageService.storeStatusImage(customerId, videoOutputFile.getAbsolutePath());
+				publishStatusUpdateNotifications(customerId, videoStatusKey, headers);
+				StatusImageResponseDTO videoResponsePayload = StatusImageResponseDTO.builder().statusId(videoStatusKey).build();
+				return responseObj.buildResponse(LanguageConstants.EN, ResponseCodes.SUCCESS_CODE, videoResponsePayload);
+			}
+			// ─────────────────────────────────────────────────────────────────────────
+
 			String fileExtension = getFileExtension(fileName);
 			if (!ALLOWED_EXTENSIONS.contains(fileExtension.toLowerCase())) {
 				throw new IllegalArgumentException("Unsupported file extension");
