@@ -6,7 +6,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import com.odin.multimedia.VideoApplication;
 
 @SpringBootTest(classes = VideoApplication.class, properties = {
-		"spring.flyway.enabled=false",
 		"spring.jpa.hibernate.ddl-auto=create-drop",
 		"spring.datasource.url=jdbc:h2:mem:application-context;MODE=MySQL;DB_CLOSE_DELAY=-1",
 		"allowed.file.extensions=jpg,jpeg,png",

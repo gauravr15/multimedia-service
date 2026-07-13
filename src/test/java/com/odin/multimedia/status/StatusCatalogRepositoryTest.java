@@ -15,7 +15,6 @@ import com.odin.multimedia.enums.StatusMediaType;
 import com.odin.multimedia.repository.StatusCatalogRepository;
 
 @DataJpaTest(properties = {
-        "spring.flyway.enabled=false",
         "spring.jpa.hibernate.ddl-auto=create-drop",
         "spring.datasource.url=jdbc:h2:mem:status-repository;MODE=MySQL;DB_CLOSE_DELAY=-1"
 })
