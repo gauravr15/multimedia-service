@@ -1,42 +1,48 @@
 package com.odin.multimedia.config;
 
-import java.util.Arrays;
-
 import javax.annotation.PostConstruct;
 
-import org.springframework.core.env.Environment;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import com.odin.multimedia.service.status.StatusMediaStore;
 
-import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
-/** Prevents an explicitly production-profiled service from using unsafe status storage. */
+/** Enforces durable status storage when explicitly required by deployment configuration. */
+@Slf4j
 @Component
-@RequiredArgsConstructor
 public class StatusProductionReadinessValidator {
 
-    private final Environment environment;
     private final StatusMediaStore mediaStore;
+    private final boolean requireDurableStorage;
+    private final int reconciliationBatchSize;
+
+    public StatusProductionReadinessValidator(StatusMediaStore mediaStore,
+            @Value("${status.media.require-durable-storage:false}") boolean requireDurableStorage,
+            @Value("${status.lifecycle-reconciliation.batch-size:100}") int reconciliationBatchSize) {
+        this.mediaStore = mediaStore;
+        this.requireDurableStorage = requireDurableStorage;
+        this.reconciliationBatchSize = reconciliationBatchSize;
+    }
 
     @PostConstruct
     public void validate() {
-        if (!isProductionProfile()) return;
-        if (!mediaStore.isDurabilityQualified()) {
-            throw new IllegalStateException(
-                    "Production status media storage is not durability-qualified");
-        }
-        int batchSize = environment.getProperty(
-                "status.lifecycle-reconciliation.batch-size", Integer.class, 100);
-        if (batchSize < 1 || batchSize > 500) {
+        if (reconciliationBatchSize < 1 || reconciliationBatchSize > 500) {
             throw new IllegalStateException(
                     "status.lifecycle-reconciliation.batch-size must be between 1 and 500");
         }
-    }
-
-    private boolean isProductionProfile() {
-        return Arrays.stream(environment.getActiveProfiles())
-                .anyMatch(profile -> "production".equalsIgnoreCase(profile)
-                        || "prod".equalsIgnoreCase(profile));
+        if (!requireDurableStorage) {
+            if (!mediaStore.isDurabilityQualified()) {
+                log.warn("Status media durability enforcement is disabled. "
+                        + "The configured media store is not production-durable; "
+                        + "status media may be lost after restart or unavailable across replicas.");
+            }
+            return;
+        }
+        if (!mediaStore.isDurabilityQualified()) {
+            throw new IllegalStateException(
+                    "Durable status media storage is required but the configured store is not qualified");
+        }
     }
 }

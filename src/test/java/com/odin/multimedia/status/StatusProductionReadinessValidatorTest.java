@@ -6,36 +6,44 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.mock.env.MockEnvironment;
-
 import com.odin.multimedia.config.StatusProductionReadinessValidator;
 import com.odin.multimedia.service.status.StatusMediaStore;
 
 class StatusProductionReadinessValidatorTest {
 
     @Test
-    void developmentAllowsTransitionalStoreButProductionFailsClosed() {
+    void requirementEnabledAllowsQualifiedStore() {
+        StatusMediaStore store = mock(StatusMediaStore.class);
+        when(store.isDurabilityQualified()).thenReturn(true);
+
+        assertDoesNotThrow(() -> new StatusProductionReadinessValidator(
+                store, true, 100).validate());
+    }
+
+    @Test
+    void requirementEnabledRejectsUnqualifiedStore() {
+        StatusMediaStore store = mock(StatusMediaStore.class);
+        when(store.isDurabilityQualified()).thenReturn(false);
+
+        assertThrows(IllegalStateException.class,
+                () -> new StatusProductionReadinessValidator(store, true, 100).validate());
+    }
+
+    @Test
+    void requirementDisabledAllowsUnqualifiedStore() {
         StatusMediaStore store = mock(StatusMediaStore.class);
         when(store.isDurabilityQualified()).thenReturn(false);
 
         assertDoesNotThrow(() -> new StatusProductionReadinessValidator(
-                new MockEnvironment().withProperty("spring.profiles.active", "development"), store).validate());
-
-        MockEnvironment production = new MockEnvironment();
-        production.setActiveProfiles("production");
-        assertThrows(IllegalStateException.class,
-                () -> new StatusProductionReadinessValidator(production, store).validate());
+                store, false, 100).validate());
     }
 
     @Test
-    void productionRejectsInvalidReconciliationBatch() {
+    void requirementEnabledRejectsInvalidReconciliationBatch() {
         StatusMediaStore store = mock(StatusMediaStore.class);
         when(store.isDurabilityQualified()).thenReturn(true);
-        MockEnvironment production = new MockEnvironment()
-                .withProperty("status.lifecycle-reconciliation.batch-size", "501");
-        production.setActiveProfiles("prod");
 
         assertThrows(IllegalStateException.class,
-                () -> new StatusProductionReadinessValidator(production, store).validate());
+                () -> new StatusProductionReadinessValidator(store, true, 501).validate());
     }
 }
