@@ -14,6 +14,7 @@ import com.odin.multimedia.constants.ResponseCodes;
 import com.odin.multimedia.constants.LanguageConstants;
 import com.odin.multimedia.dto.NotificationDTO;
 import com.odin.multimedia.dto.ResponseDTO;
+import com.odin.multimedia.dto.StatusRefreshHint;
 import com.odin.multimedia.enums.NotificationChannel;
 import com.odin.multimedia.repository.ProfileRepository;
 import com.odin.multimedia.utility.ResponseObject;
@@ -73,12 +74,25 @@ public class StatusDeletionService {
         }
     }
 
+    public void deleteCompatibilityStatus(String customerId, String statusKey) {
+        try {
+            statusImageService.deleteStatusImage(customerId, statusKey);
+        } catch (Exception failure) {
+            log.warn("[STATUS-DELETE] Compatibility Redis cleanup failed. customerId={}", customerId);
+        }
+    }
+
     /**
      * Fetches the viewer list from profile-service and publishes STATUS_DELETE
      * notifications via Kafka so that each viewer's device removes the status locally.
      * Package-private so that {@link StatusImageExpiryListener} can call it on Redis TTL expiry.
      */
     void publishStatusDeleteNotifications(String uploaderCustomerId, String statusKey) {
+		publishStatusDeleteNotifications(uploaderCustomerId, null, statusKey, "STATUS_DELETED");
+	}
+
+	public void publishStatusDeleteNotifications(String uploaderCustomerId, String catalogStatusId,
+			String statusKey, String eventType) {
         log.info("[STATUS-DELETE] Fetching viewer list for delete notification. uploaderCustomerId={}", uploaderCustomerId);
 
         try {
@@ -107,6 +121,14 @@ public class StatusDeletionService {
                     notificationMap.put("files", Collections.singletonList(statusKey));
                     notificationMap.put("senderCustomerId", uploaderCustomerId);
                     notificationMap.put("statusDeleteSignal", "STATUS_DELETE");
+					notificationMap.put("eventType", eventType);
+					if (catalogStatusId != null) notificationMap.put("catalogStatusId", catalogStatusId);
+					notificationMap.put("uploaderId", uploaderCustomerId);
+					notificationMap.put("changeType", eventType.equals("STATUS_EXPIRED") ? "EXPIRE" : "DELETE");
+					notificationMap.put("occurredAt", java.time.Instant.now().toString());
+					notificationMap.put("traceId", java.util.UUID.randomUUID().toString());
+					notificationMap.put("minimumCapability", StatusRefreshHint.CAPABILITY);
+					notificationMap.put("refreshRequired", true);
                     if (senderMobile != null) {
                         notificationMap.put("senderMobile", senderMobile);
                         notificationMap.put("senderPhone", senderMobile);

@@ -34,10 +34,16 @@ import com.odin.multimedia.dto.FileResponseDTO;
 import com.odin.multimedia.dto.NotificationDTO;
 import com.odin.multimedia.dto.ResponseDTO;
 import com.odin.multimedia.dto.StatusImageResponseDTO;
+import com.odin.multimedia.dto.StatusRefreshHint;
 import com.odin.multimedia.enums.ImageType;
 import com.odin.multimedia.enums.NotificationChannel;
+import com.odin.multimedia.enums.StatusMediaType;
 import com.odin.multimedia.repository.FileRepository;
 import com.odin.multimedia.repository.ProfileRepository;
+import com.odin.multimedia.service.status.StatusUploadLifecycleService;
+import com.odin.multimedia.service.status.StatusUploadResult;
+import com.odin.multimedia.service.status.ProfileStatusEligibilityClient;
+import com.odin.multimedia.service.status.StatusAccessException;
 import com.odin.multimedia.utility.ResponseObject;
 import com.odin.multimedia.utility.Utility;
 
@@ -73,6 +79,12 @@ public class CustomerFileUploadService implements FileUploadService {
 
 	@Autowired
 	private StatusImageService statusImageService;
+
+	@Autowired
+	private StatusUploadLifecycleService statusUploadLifecycleService;
+
+	@Autowired
+	private ProfileStatusEligibilityClient profileStatusEligibilityClient;
 	
 	@Autowired
 	private ProfileRepository profileRepo;
@@ -133,22 +145,7 @@ public class CustomerFileUploadService implements FileUploadService {
 				}
 				log.info("[UPLOAD-FILE] Video status upload | extension=mp4 | mimeType={}", videoMimeType);
 				byte[] videoBytes = file.getBytes();
-				String videoBase64 = Base64.getEncoder().encodeToString(videoBytes);
-				String videoDate = new SimpleDateFormat("dd-MM-yyyy").format(new Date());
-				File videoDateFolder = new File(BASE_DIR + File.separator + videoDate);
-				if (!videoDateFolder.exists()) {
-					videoDateFolder.mkdirs();
-				}
-				String videoUniqueFileName = UUID.randomUUID() + "." + ApplicationConstants.TXT;
-				File videoOutputFile = new File(videoDateFolder, videoUniqueFileName);
-				log.info("[UPLOAD-FILE] Video status output file: {}", videoOutputFile.getAbsolutePath());
-				try (FileOutputStream videoFos = new FileOutputStream(videoOutputFile)) {
-					videoFos.write(videoBase64.getBytes());
-				}
-				String videoStatusKey = statusImageService.storeStatusImage(customerId, videoOutputFile.getAbsolutePath());
-				publishStatusUpdateNotifications(customerId, videoStatusKey, headers);
-				StatusImageResponseDTO videoResponsePayload = StatusImageResponseDTO.builder().statusId(videoStatusKey).build();
-				return responseObj.buildResponse(LanguageConstants.EN, ResponseCodes.SUCCESS_CODE, videoResponsePayload);
+				return uploadStatus(customerId, StatusMediaType.VIDEO, videoBytes, headers);
 			}
 			// ─────────────────────────────────────────────────────────────────────────
 
@@ -163,6 +160,10 @@ public class CustomerFileUploadService implements FileUploadService {
 			}
 
 			byte[] fileBytes = file.getBytes();
+			if (resolvedImageType == ImageType.STATUS_IMG) {
+				return uploadStatus(customerId, StatusMediaType.IMAGE, fileBytes, headers);
+			}
+
 			String base64EncodedContent = Base64.getEncoder().encodeToString(fileBytes);
 
 			String currentDate = new SimpleDateFormat("dd-MM-yyyy").format(new Date());
@@ -178,16 +179,6 @@ public class CustomerFileUploadService implements FileUploadService {
 	        try (FileOutputStream fos = new FileOutputStream(outputFile)) {
 	            fos.write(base64EncodedContent.getBytes());
 	        }
-
-			if (resolvedImageType == ImageType.STATUS_IMG) {
-				String statusKey = statusImageService.storeStatusImage(customerId, outputFile.getAbsolutePath());
-				
-				// Publish status update notifications to Kafka for allowed customer IDs
-				publishStatusUpdateNotifications(customerId, statusKey, headers);
-
-				StatusImageResponseDTO responsePayload = StatusImageResponseDTO.builder().statusId(statusKey).build();
-				return responseObj.buildResponse(LanguageConstants.EN, ResponseCodes.SUCCESS_CODE, responsePayload);
-			}
 
 			String downscaledBase64 = null;
 			if (resolvedImageType == ImageType.PROFILE_IMG) {
@@ -211,12 +202,75 @@ public class CustomerFileUploadService implements FileUploadService {
 			FileResponseDTO fileResponseDTO = FileResponseDTO.builder().imageId(fileResponse.getId()).build();
 			return responseObj.buildResponse(LanguageConstants.EN, ResponseCodes.SUCCESS_CODE, fileResponseDTO);
 
+		} catch (StatusAccessException readiness) {
+			if (readiness.getCategory() == StatusAccessException.Category.REPAIR_REQUIRED) {
+				return ResponseDTO.builder().statusCode(ResponseCodes.FAILURE_CODE).status("REPAIR_REQUIRED")
+						.message("STATUS_PROFILE_REPAIR_REQUIRED").build();
+			}
+			return responseObj.buildResponse(LanguageConstants.EN, ResponseCodes.EXCEPTION_CODE);
 		} catch (Exception e) {
 			return responseObj.buildResponse(LanguageConstants.EN, ResponseCodes.EXCEPTION_CODE);
 		}
 	}
 
-	private void publishStatusUpdateNotifications(String uploaderCustomerId, String statusKey, Map<String, String> headers) {
+	private ResponseDTO uploadStatus(String customerId, StatusMediaType mediaType, byte[] content,
+			Map<String, String> headers) {
+		profileStatusEligibilityClient.requireReady(customerId);
+		String idempotencyKey = getHeaderIgnoreCase(headers, "Idempotency-Key");
+		StatusUploadResult upload = statusUploadLifecycleService.upload(
+				customerId, mediaType, content, idempotencyKey);
+
+		String existingLegacyKey = upload.getRecord().getLegacyStatusKey();
+		if (!upload.isNewlyActivated() && existingLegacyKey != null) {
+            return statusUploadSuccess(existingLegacyKey, upload);
+		}
+
+		String legacyStatusKey = existingLegacyKey != null
+				? existingLegacyKey : statusImageService.createStatusKey(customerId);
+		try {
+			File legacyFile = writeLegacyStatusFile(content);
+			statusImageService.storeStatusImage(customerId, legacyFile.getAbsolutePath(), legacyStatusKey);
+			statusUploadLifecycleService.attachLegacyStatusKey(
+					upload.getRecord().getStatusId(), legacyStatusKey);
+		} catch (Exception compatibilityFailure) {
+			log.error("Status is ACTIVE but legacy compatibility publication failed. statusId={}",
+					upload.getRecord().getStatusId(), compatibilityFailure);
+		}
+		publishStatusUpdateNotifications(customerId, upload.getRecord().getStatusId(),
+				legacyStatusKey, headers);
+        return statusUploadSuccess(legacyStatusKey, upload);
+	}
+
+	private File writeLegacyStatusFile(byte[] content) throws Exception {
+		String currentDate = new SimpleDateFormat("dd-MM-yyyy").format(new Date());
+		File dateFolder = new File(BASE_DIR + File.separator + currentDate);
+		if (!dateFolder.exists() && !dateFolder.mkdirs()) {
+			throw new IllegalStateException("Unable to create legacy status directory");
+		}
+		File outputFile = new File(dateFolder, UUID.randomUUID() + "." + ApplicationConstants.TXT);
+		try (FileOutputStream fos = new FileOutputStream(outputFile)) {
+			fos.write(Base64.getEncoder().encode(content));
+		}
+		return outputFile;
+	}
+
+    private ResponseDTO statusUploadSuccess(String legacyStatusKey, StatusUploadResult upload) {
+        StatusImageResponseDTO payload = StatusImageResponseDTO.builder().statusId(legacyStatusKey)
+                .catalogStatusId(upload.getRecord().getStatusId()).createdAt(upload.getRecord().getCreatedAt())
+                .expiresAt(upload.getRecord().getExpiresAt()).mediaType(upload.getRecord().getMediaType()).build();
+		return responseObj.buildResponse(LanguageConstants.EN, ResponseCodes.SUCCESS_CODE, payload);
+	}
+
+	private String getHeaderIgnoreCase(Map<String, String> headers, String name) {
+		if (headers == null) return null;
+		for (Map.Entry<String, String> entry : headers.entrySet()) {
+			if (name.equalsIgnoreCase(entry.getKey())) return entry.getValue();
+		}
+		return null;
+	}
+
+	private void publishStatusUpdateNotifications(String uploaderCustomerId, String catalogStatusId,
+			String statusKey, Map<String, String> headers) {
 		log.info("Fetching allowed customer IDs for status update notification. uploaderCustomerId={}", uploaderCustomerId);
 		try {
 			// 1. Call Profile Service to get allowed customer IDs
@@ -238,6 +292,14 @@ public class CustomerFileUploadService implements FileUploadService {
 				for (Long allowedId : allowedCustomerIds) {
 					java.util.Map<String, Object> notificationMap = new java.util.HashMap<>();
 					notificationMap.put("files", Collections.singletonList(statusKey));
+					notificationMap.put("eventType", "STATUS_CHANGED");
+					notificationMap.put("catalogStatusId", catalogStatusId);
+					notificationMap.put("uploaderId", uploaderCustomerId);
+					notificationMap.put("changeType", "UPSERT");
+					notificationMap.put("occurredAt", java.time.Instant.now().toString());
+					notificationMap.put("traceId", java.util.UUID.randomUUID().toString());
+					notificationMap.put("minimumCapability", StatusRefreshHint.CAPABILITY);
+					notificationMap.put("refreshRequired", true);
 					notificationMap.put("senderCustomerId", uploaderCustomerId);
 					notificationMap.put("senderMobile", senderMobile);
 					notificationMap.put("senderPhone", senderMobile);

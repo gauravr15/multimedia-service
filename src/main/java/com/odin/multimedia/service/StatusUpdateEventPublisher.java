@@ -21,14 +21,16 @@ public class StatusUpdateEventPublisher {
     private final StatusUpdateKafkaProperties kafkaProperties;
 
     public void publish(NotificationDTO message, String customerKey) {
+		long started = System.nanoTime();
         if (!kafkaProperties.isEnabled()) {
             log.debug("Status update Kafka publishing disabled. Skipping notificationId={} and key={}",
                     message.getNotificationId(), customerKey);
             return;
         }
 
-        log.info("Publishing status update notification to Kafka. topic={}, key={}, customerId={}", 
-                kafkaProperties.getTopic(), customerKey, message.getCustomerId());
+		Object eventType = message.getMap() == null ? null : message.getMap().get("eventType");
+		Object statusId = message.getMap() == null ? null : message.getMap().get("catalogStatusId");
+		log.info("Status hint publish attempt. eventType={}, statusId={}", eventType, statusId);
 
         Message<NotificationDTO> kafkaMessage = MessageBuilder.withPayload(message)
                 .setHeader(KafkaHeaders.TOPIC, kafkaProperties.getTopic())
@@ -42,8 +44,8 @@ public class StatusUpdateEventPublisher {
                         result.getRecordMetadata().partition(),
                         result.getRecordMetadata().offset(),
                         message.getNotificationId(),
-                        customerKey),
-                ex -> log.error("Failed to publish status update event for key={}, notificationId={}",
-                        customerKey, message.getNotificationId(), ex));
+						customerKey),
+				ex -> log.error("HINT_PUBLISH_FAILED eventType={}, statusId={}, elapsedMs={}",
+						eventType, statusId, (System.nanoTime() - started) / 1_000_000L));
     }
 }

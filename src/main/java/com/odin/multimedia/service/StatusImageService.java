@@ -36,8 +36,14 @@ public class StatusImageService {
      * @return The generated status key
      */
     public String storeStatusImage(String customerId, String filePath) {
-        long timestamp = System.currentTimeMillis();
-        String statusKey = customerId + STATUS_IMG_KEY_PART + timestamp;
+        return storeStatusImage(customerId, filePath, createStatusKey(customerId));
+    }
+
+    public String createStatusKey(String customerId) {
+        return customerId + STATUS_IMG_KEY_PART + System.currentTimeMillis();
+    }
+
+    public String storeStatusImage(String customerId, String filePath, String statusKey) {
         String indexKey = customerId + AVAILABLE_STATUS_SUFFIX;
 
         try {
